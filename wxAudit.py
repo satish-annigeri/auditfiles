@@ -5,6 +5,7 @@
 #
 
 import wx
+import wx.grid
 
 # begin wxGlade: dependencies
 # end wxGlade
@@ -13,12 +14,14 @@ import wx
 # end wxGlade
 
 from pathlib import Path
-from os import walk
+from os.path import isdir, isfile, join
 from glob import glob
 
 def get_num_dirs_files(root_dir):
-    dirs = next(walk(root_dir))[1]
-    files = next(walk(root_dir))[2]
+    p = Path(root_dir)
+    flist = list(p.glob('*'))
+    dirs = [f for f in flist if isdir(f)]
+    files = [f for f in flist if isfile(f)]
     return (len(dirs), len(files))
 
 def get_plural(n, str1, str2=''):
@@ -34,13 +37,27 @@ class MyFrame(wx.Frame):
         # begin wxGlade: MyFrame.__init__
         kwds["style"] = kwds.get("style", 0) | wx.DEFAULT_FRAME_STYLE
         wx.Frame.__init__(self, *args, **kwds)
-        self.SetSize((600, 300))
+        self.SetSize((700, 500))
+
+        # Menu Bar
+        self.frame_menubar = wx.MenuBar()
+        wxglade_tmp_menu = wx.Menu()
+        item = wxglade_tmp_menu.Append(wx.ID_ANY, "E&xit", "Close application")
+        self.Bind(wx.EVT_MENU, self.on_menu_file_exit, id=item.GetId())
+        self.frame_menubar.Append(wxglade_tmp_menu, "&File")
+        wxglade_tmp_menu = wx.Menu()
+        item = wxglade_tmp_menu.Append(wx.ID_ANY, "&About", "About the application")
+        self.Bind(wx.EVT_MENU, self.on_menu_help_about, id=item.GetId())
+        self.frame_menubar.Append(wxglade_tmp_menu, "&Help")
+        self.SetMenuBar(self.frame_menubar)
+        # Menu Bar end
+        self.frame_statusbar = self.CreateStatusBar(1)
         self.panel = wx.Panel(self, wx.ID_ANY)
         self.text_ctrl_filepattern = wx.TextCtrl(self.panel, wx.ID_ANY, "*.py")
-        self.text_ctrl_src = wx.DirPickerCtrl(self.panel, wx.ID_ANY, "/home/satish/", style=wx.DIRP_USE_TEXTCTRL)
-        self.text_ctrl_dest = wx.DirPickerCtrl(self.panel, wx.ID_ANY, "/home/satish/Documents", style=wx.DIRP_USE_TEXTCTRL)
+        self.text_ctrl_src = wx.DirPickerCtrl(self.panel, wx.ID_ANY, r"C:\Users\satish\Documents", style=wx.DIRP_USE_TEXTCTRL)
+        self.text_ctrl_dest = wx.DirPickerCtrl(self.panel, wx.ID_ANY, "/home/satish/Documents/", style=wx.DIRP_USE_TEXTCTRL)
         self.text_ctrl_subjects = wx.TextCtrl(self.panel, wx.ID_ANY, "*")
-        self.text_ctrl_1 = wx.TextCtrl(self.panel, wx.ID_ANY, "", style=wx.TE_MULTILINE | wx.TE_READONLY)
+        self.grid = wx.grid.Grid(self.panel, wx.ID_ANY, size=(1, 1))
         self.btn_scandirs = wx.Button(self.panel, wx.ID_ANY, "Scan for Folders")
         self.btn_beginaudit = wx.Button(self.panel, wx.ID_ANY, "Begin Audit")
         self.btn_exit = wx.Button(self.panel, wx.ID_ANY, "Exit")
@@ -56,8 +73,21 @@ class MyFrame(wx.Frame):
 
     def __set_properties(self):
         # begin wxGlade: MyFrame.__set_properties
-        self.SetTitle(f"Audit {self.text_ctrl_filepattern.GetValue()} files")
-        self.text_ctrl_1.Enable(False)
+        self.SetTitle("Audit Files")
+        self.frame_statusbar.SetStatusWidths([-1])
+        
+        # statusbar fields
+        frame_statusbar_fields = ["Audit files"]
+        for i in range(len(frame_statusbar_fields)):
+            self.frame_statusbar.SetStatusText(frame_statusbar_fields[i], i)
+        self.grid.CreateGrid(2, 4)
+        self.grid.SetColLabelValue(0, "Parent Folder")
+        self.grid.SetColSize(0, 250)
+        self.grid.SetColLabelValue(1, "Subfolders")
+        self.grid.SetColLabelValue(2, "Files")
+        filepattern = self.text_ctrl_filepattern.GetValue()
+        self.grid.SetColLabelValue(3, f"Files Matching {filepattern}")
+        self.grid.SetColSize(3, 150)
         # end wxGlade
 
     def __do_layout(self):
@@ -79,10 +109,10 @@ class MyFrame(wx.Frame):
         grid_sizer_1.Add(self.text_ctrl_dest, 0, wx.EXPAND, 0)
         label_3 = wx.StaticText(self.panel, wx.ID_ANY, "Subject list")
         grid_sizer_1.Add(label_3, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALIGN_RIGHT, 0)
-        grid_sizer_1.Add(self.text_ctrl_subjects, 0, wx.EXPAND, 0)
+        grid_sizer_1.Add(self.text_ctrl_subjects, 1, wx.BOTTOM | wx.EXPAND, 10)
         grid_sizer_1.AddGrowableCol(1)
         sizer_4.Add(grid_sizer_1, 0, wx.EXPAND, 0)
-        sizer_4.Add(self.text_ctrl_1, 1, wx.EXPAND | wx.TOP, 5)
+        sizer_4.Add(self.grid, 1, wx.EXPAND, 0)
         sizer_2.Add(sizer_4, 1, wx.ALL | wx.EXPAND, 10)
         sizer_3.Add(self.btn_scandirs, 0, wx.ALIGN_CENTER, 0)
         sizer_3.Add(self.btn_beginaudit, 0, wx.ALIGN_CENTER, 0)
@@ -99,15 +129,39 @@ class MyFrame(wx.Frame):
         root_dir = self.text_ctrl_src.GetPath()
         p = Path(root_dir)
         subject_patterns = self.text_ctrl_subjects.GetValue()
-        print(f'INFO: Scanning {root_dir} for folders matching "{subject_patterns}"')
+        # print(f'INFO: Scanning {root_dir} for folders matching "{subject_patterns}"')
         subject_pattern_list = subject_patterns.split()
+        subject_count = 0
+        self.grid.ClearGrid()
+        self.grid.DisableDragRowSize()
+
         for subject_pattern in subject_pattern_list:
             subjects = p.glob(subject_pattern)
             for subject in subjects:
-                root_dir = p
-                print('INFO:', root_dir)
-                d, f = get_num_dirs_files(root_dir)
-                print(f'{subject} has {d} {get_plural(d, "folder")} and {f} {get_plural(f, "file")}')
+                if subject.is_dir():
+                    d, f = get_num_dirs_files(p.joinpath(subject))
+                    # print(f'{subject_count+1}: {subject.name} has {d} {get_plural(d, "folder")} and {f} {get_plural(f, "file")}')
+                    nrows = self.grid.GetNumberRows()
+                    if subject_count >= nrows:
+                        self.grid.AppendRows()
+                    self.grid.SetCellValue(subject_count, 0, str(subject.name))
+                    if d > 0:
+                        self.grid.SetCellBackgroundColour(subject_count, 1, wx.RED)
+                        self.grid.SetCellTextColour(subject_count, 1, wx.WHITE)
+                    else:
+                        self.grid.SetCellBackgroundColour(subject_count, 1, wx.GREEN)
+                    self.grid.SetCellValue(subject_count, 1, str(d))
+
+                    if f== 0:
+                        self.grid.SetCellBackgroundColour(subject_count, 2, wx.RED)
+                        self.grid.SetCellTextColour(subject_count, 2, wx.WHITE)
+                    else:
+                        self.grid.SetCellBackgroundColour(subject_count, 2, wx.GREEN)
+                    self.grid.SetCellAlignment(subject_count, 2, wx.ALIGN_RIGHT, wx.ALIGN_CENTER)
+                    self.grid.SetCellValue(subject_count, 2, str(f))
+
+                    self.grid.SetCellAlignment(subject_count, 2, wx.ALIGN_RIGHT, wx.ALIGN_CENTER)
+                    subject_count += 1
         event.Skip()
 
     def on_btn_exit(self, event):  # wxGlade: MyFrame.<event_handler>
@@ -123,16 +177,56 @@ class MyFrame(wx.Frame):
         subject_patterns = self.text_ctrl_subjects.GetValue()
         print(f'INFO: Scanning {root_dir} for folders matching "{subject_patterns}"')
         subject_pattern_list = subject_patterns.split()
+
+        subject_count = 0
+        self.grid.ClearGrid()
         for subject_pattern in subject_pattern_list:
             subjects = p.glob(subject_pattern)
             for subject in subjects:
-                files = p.joinpath(subject).glob('**/'+filepattern)
-                print(f'{subject}')
-                for file in files:
-                    print(f'\t{file}')
+                if subject.is_dir():
+                    d, f = get_num_dirs_files(p.joinpath(subject))
+                    # print(f'{subject_count+1}: {subject.name} has {d} {get_plural(d, "folder")} and {f} {get_plural(f, "file")}')
+                    nrows = self.grid.GetNumberRows()
+                    if subject_count >= nrows:
+                        self.grid.AppendRows()
+                    self.grid.SetCellValue(subject_count, 0, str(subject.name))
+                    self.grid.SetCellAlignment(subject_count, 1, wx.ALIGN_RIGHT, wx.ALIGN_CENTER)
+                    if d > 0:
+                        self.grid.SetCellBackgroundColour(subject_count, 1, wx.RED)
+                        self.grid.SetCellTextColour(subject_count, 1, wx.WHITE)
+                    else:
+                        self.grid.SetCellBackgroundColour(subject_count, 1, wx.GREEN)
+                    self.grid.SetCellValue(subject_count, 1, str(d))
+
+                    self.grid.SetCellAlignment(subject_count, 2, wx.ALIGN_RIGHT, wx.ALIGN_CENTER)
+                    if f== 0:
+                        self.grid.SetCellBackgroundColour(subject_count, 2, wx.RED)
+                        self.grid.SetCellTextColour(subject_count, 2, wx.WHITE)
+                    else:
+                        self.grid.SetCellBackgroundColour(subject_count, 2, wx.GREEN)
+                    self.grid.SetCellValue(subject_count, 2, str(f))
+
+                    files = list(p.joinpath(subject).glob('**/'+filepattern))
+                    num_files = len(files)
+                    for fn in files:
+                        print(f'\t{fn.parent} -> {fn.name}')
+                    self.grid.SetCellAlignment(subject_count, 3, wx.ALIGN_RIGHT, wx.ALIGN_CENTER)
+                    self.grid.SetCellValue(subject_count, 3, str(num_files))
+                    subject_count += 1
+                    # print(f'{subject}: {num_files} {filepattern} files')
         event.Skip()
+
     def on_change_fp(self, event):  # wxGlade: MyFrame.<event_handler>
+        filepattern = self.text_ctrl_filepattern.GetValue()
         self.SetTitle(f"Audit {self.text_ctrl_filepattern.GetValue()} files")
+        self.grid.SetColLabelValue(3, f"Files Matching {filepattern}")
+        event.Skip()
+
+    def on_menu_file_exit(self, event):  # wxGlade: MyFrame.<event_handler>
+        self.Close()
+
+    def on_menu_help_about(self, event):  # wxGlade: MyFrame.<event_handler>
+        print("Event handler 'on_menu_help_about' not implemented!")
         event.Skip()
 # end of class MyFrame
 
